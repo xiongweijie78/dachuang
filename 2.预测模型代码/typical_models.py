@@ -74,6 +74,39 @@ class LSTM_model(nn.Module):
         out = self.fc2(tem)
 
         return out
+class LSTM_KAN_model(nn.Module):
+    def __init__(self, feature_num, layer_num, nodes_num):
+        super(LSTM_KAN_model, self).__init__()
+
+        self.lstm1 = nn.LSTM(
+            input_size=feature_num,
+            num_layers=layer_num,
+            hidden_size=nodes_num,
+            batch_first=True
+        )
+
+        self.dropout = nn.Dropout(0.4)
+        self.fc1 = nn.Linear(nodes_num, 64)
+
+        # 用 KAN 预测头替换原来的 Linear(64, 1)
+        self.kan_head = KANLinear(
+            in_features=64,
+            out_features=1,
+            grid_size=5,
+            spline_order=3,
+            grid_range=[-1, 1]
+        )
+
+    def forward(self, input):
+        tem, _ = self.lstm1(input)
+        tem = tem[:, -1, :]
+        tem = self.dropout(tem)
+        tem = F.relu(self.fc1(tem))
+
+        # KAN 内部会自动调用样条基函数
+        out = self.kan_head(tem)
+
+        return out
 
 class GRU_model(nn.Module):
     def __init__(self, feature_num, layer_num, nodes_num):

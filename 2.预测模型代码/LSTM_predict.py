@@ -1,16 +1,16 @@
 import torch
 import pandas as pd
 import numpy as np
-from torch import nn, optim
-from torch.utils.data import DataLoader
+from torch import nn, optim#神经网络模块，引用LSTM等。优化器模块，引用Adam等
+from torch.utils.data import DataLoader#数据加载器，负责把数据集分批（batch）、打乱、并行读取，喂给模型训练
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
-from numpy import concatenate
+from numpy import concatenate#concatenate = 拼接，把多个数组沿某个轴拼成一个
 from pandas import read_csv
 from sklearn.preprocessing import MinMaxScaler
 from math import sqrt
 import numpy as np
 from matplotlib import pyplot as plt
-from typical_models import LSTM_model
+from typical_models import LSTM_model, LSTM_KAN_model
 import time
 from power_dataset import Power_ds
 
@@ -58,21 +58,25 @@ n_runs = 10
 dataset = read_csv(
     'power.csv',
     header=0, index_col=0)
-values = dataset.values
+values = dataset.values#DataFrame转numpy
 values = values.astype('float32')
-scaler = MinMaxScaler(feature_range=(0, 1)).fit(values)
+scaler = MinMaxScaler(feature_range=(0, 1)).fit(values)#最大最小归一器，保存最大最小值
 
 device = torch.device('cuda')
-train_ds = Power_ds(3, 6, 'train', unsqueeze=False)
+train_ds = Power_ds(3, 6, 'train', unsqueeze=False)#读取数据归一化并构造滑动窗口
 test_ds = Power_ds(3, 6, 'test', unsqueeze=False)
 
-train_loader = DataLoader(train_ds, batch_size=batchsize, shuffle=True)
-test_loader = DataLoader(test_ds, batch_size=len(test_ds), shuffle=False)
+train_loader = DataLoader(train_ds, batch_size=batchsize, shuffle=True)#32个样本一批并打乱顺序
+test_loader = DataLoader(test_ds, batch_size=len(test_ds), shuffle=False)#不打乱顺序
 
 for run in range(n_runs):
     start_time = time.time()
 
-    model = LSTM_model(feature_num=6, layer_num=1, nodes_num=128).to(device)
+    model = LSTM_KAN_model(
+        feature_num=6,
+        layer_num=1,
+        nodes_num=128
+    ).to(device)
     optimizer = optim.Adam(model.parameters(), lr=lr)
     criteon = nn.L1Loss()
 
@@ -83,12 +87,12 @@ for run in range(n_runs):
 
         for step, (x, y) in enumerate(train_loader):
             x, y = x.to(device), y.to(device)
-            logits = model(x)
+            logits = model(x)#前向传播
             loss = criteon(logits, y)
             total_loss.append(loss.item())
 
-            optimizer.zero_grad()
-            loss.backward()
+            optimizer.zero_grad()#清空旧梯度
+            loss.backward()#反向传播
             optimizer.step()
 
         # if (epoch+1)%5 == 0:
@@ -112,9 +116,9 @@ for run in range(n_runs):
         test_X = test_X.reshape((test_X.shape[0], n_hours * n_features))
 
         # invert scaling for forecast
-        inv_yhat = concatenate((yhat, test_X[:, -n_features+1:]), axis=1)
-        inv_yhat = scaler.inverse_transform(inv_yhat)
-        inv_yhat = inv_yhat[:, 0]
+        inv_yhat = concatenate((yhat, test_X[:, -n_features+1:]), axis=1)#拼列
+        inv_yhat = scaler.inverse_transform(inv_yhat)#反归一化
+        inv_yhat = inv_yhat[:, 0]#取功率列
         # invert scaling for actual
         test_y = test_y.cpu().detach().numpy()
         test_y = test_y.reshape(len(test_y), 1)
